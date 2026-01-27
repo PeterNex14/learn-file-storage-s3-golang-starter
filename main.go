@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
 	"github.com/google/uuid"
 
@@ -22,6 +25,7 @@ type apiConfig struct {
 	s3Region         string
 	s3CfDistribution string
 	port             string
+	s3Client		 *s3.Client
 }
 
 type thumbnail struct {
@@ -33,6 +37,13 @@ var videoThumbnails = map[uuid.UUID]thumbnail{}
 
 func main() {
 	godotenv.Load(".env")
+
+	cfg_s3, err := config.LoadDefaultConfig(
+		context.Background(),
+		config.WithRegion(os.Getenv("S3_REGION")),
+	)
+
+	s3_client := s3.NewFromConfig(cfg_s3)
 
 	pathToDB := os.Getenv("DB_PATH")
 	if pathToDB == "" {
@@ -94,6 +105,7 @@ func main() {
 		s3Region:         s3Region,
 		s3CfDistribution: s3CfDistribution,
 		port:             port,
+		s3Client: 		  s3_client,
 	}
 
 	err = cfg.ensureAssetsDir()
