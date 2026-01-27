@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -53,9 +56,18 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	data, err := io.ReadAll(file)
+	file_type := strings.Split(media_type, "/")
+	image_path := filepath.Join(cfg.assetsRoot, videoIDString) + "." + file_type[1]
+
+	new_file, err := os.Create(image_path)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Failed to read file", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to create new file", err)
+		return
+	}
+
+	_, err = io.Copy(new_file, file)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to copy file", err)
 		return
 	}
 
@@ -70,15 +82,9 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	result := thumbnail{
-		data: data,
-		mediaType: media_type,
-	}
+	thumbnailUrl := fmt.Sprintf("http://localhost:%s/%s", cfg.port, image_path)
 
-	videoThumbnails[videoID] = result
-
-	url := fmt.Sprintf("http://localhost:%s/api/thumbnails/%s", cfg.port, videoID)
-	video.ThumbnailURL = &url
+	video.ThumbnailURL = &thumbnailUrl
 
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
