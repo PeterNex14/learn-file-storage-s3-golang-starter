@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -42,7 +43,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return 
 	}
 
-	file, header, err := r.FormFile("thumbnail")
+	file, _, err := r.FormFile("thumbnail")
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Unable to parse form file", err)
 		return 
@@ -50,13 +51,20 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	defer file.Close()
 
-	media_type := header.Header.Get("Content-Type")
-	if media_type == "" {
-		respondWithError(w, http.StatusBadRequest, "Empty media file", nil)
+	
+	media_type, _, err := mime.ParseMediaType("Content-Type")
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to get media type", err)
+		return
+	}
+
+	if media_type != "image/jpeg" && media_type != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "Not the require file type", nil)
 		return
 	}
 
 	file_type := strings.Split(media_type, "/")
+
 	image_path := filepath.Join(cfg.assetsRoot, videoIDString) + "." + file_type[1]
 
 	new_file, err := os.Create(image_path)
