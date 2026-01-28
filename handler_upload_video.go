@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -84,6 +85,44 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	processed_video, err := processVideoForFastStart(temp_file.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to process video", err)
+		return
+	}
+
+	processed_file, err := os.Open(processed_video)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to open file", err)
+		return
+	}
+
+	defer os.Remove(processed_file.Name())
+	defer processed_file.Close()
+
+	info, err := processed_file.Stat()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to Retrieve metadata", err)
+		return
+	}
+	size := info.Size()
+
+	aspectRatio, err := getVideoAspectRatio(temp_file.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error determining aspect ratio", err)
+		return
+	}
+
+	directory := ""
+	switch aspectRatio {
+	case "16:9":
+		directory = "landscape"
+	case "9:16":
+		directory = "portrait"
+	default:
+		directory = "other"
+	}
+
 	_, err = temp_file.Seek(0, io.SeekStart)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to reset temp file", err)
@@ -95,14 +134,16 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	rand_file_name := base64.RawURLEncoding.EncodeToString(key)
 	file_type := strings.Split(media_type, "/")
 	image_path := rand_file_name + "." + file_type[1]
+	image_path = path.Join(directory, image_path)
 
 	_, err = cfg.s3Client.PutObject(
 		r.Context(),
 		&s3.PutObjectInput{
 			Bucket: aws.String(cfg.s3Bucket),
 			Key: aws.String(image_path),
-			Body: temp_file,
+			Body: processed_file,
 			ContentType: aws.String(media_type),
+			ContentLength: aws.Int64(size),
 		},
 	)
 
@@ -111,7 +152,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	videoURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, image_path)
+	videoURL := fmt.Sprintf("https://%s/%s", cfg.s3CfDistribution, image_path)
 
 	video.VideoURL = &videoURL
 
